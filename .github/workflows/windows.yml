@@ -85,6 +85,7 @@ jobs:
         run: |
           mkdir -p dist/data
           cp build/iridium-sniffer.exe dist/
+                      cp run.bat dist/
           for dll in $(ldd build/iridium-sniffer.exe | grep -o '/usr/bin/msys-[^ ]*\.dll' | sort -u || true); do cp "$dll" dist/; done
           cp data/waypoints.csv dist/data/
           ls -lh dist/ dist/data/
