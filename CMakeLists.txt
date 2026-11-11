@@ -164,6 +164,12 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|x86|i[3-6]86")
         PROPERTIES COMPILE_FLAGS "-msse4.2")
     set_source_files_properties(${PROJECT_SOURCE_DIR}/simd_avx2.c
         PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+        # Windows/MSYS workaround (GCC 16.2 ICE): qpsk_demod.c crashes the
+        # compiler in the forwprop GIMPLE pass (qpsk_pll) at -O2/-O3, even with
+        # -fno-forward-propagate. Compile this one file at -O0 so no
+        # optimization pass runs on it; the rest of the project stays at -O2.
+        set_source_files_properties(${PROJECT_SOURCE_DIR}/qpsk_demod.c
+        PROPERTIES COMPILE_OPTIONS "-O0")
     list(APPEND SOURCES
         ${PROJECT_SOURCE_DIR}/simd_sse42.c
         ${PROJECT_SOURCE_DIR}/simd_avx2.c)
@@ -359,7 +365,9 @@ else()
 endif()
 
 set_property(TARGET iridium-sniffer PROPERTY C_STANDARD 99)
-set_property(TARGET iridium-sniffer PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+# Windows/MSYS workaround (GCC 16.2 ICE): disable LTO so the link step
+# does not re-run the crashing forwprop pass over qpsk_pll's IR.
+set_property(TARGET iridium-sniffer PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
 
 install(TARGETS iridium-sniffer DESTINATION bin)
 
