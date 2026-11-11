@@ -1,0 +1,91 @@
+# Windows build for iridium-sniffer (C99 CLI tool).
+#
+# NOTE: this code is POSIX-only (sys/socket.h, unistd.h, getopt_long,
+# err.h, pthreads) with no Win32 port, so it is built in the MSYS POSIX
+# layer — NOT MINGW64. The exe therefore ships next to msys-2.0.dll
+# (and any other msys-*.dll ldd reports), like a Cygwin-style package.
+# No source changes: the workflow only adds the build.
+name: Build Windows
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          update: true
+          install: >-
+            gcc
+            cmake
+            ninja
+            make
+            pkg-config
+            curl
+
+      - name: Cache FFTW
+        uses: actions/cache@v4
+        with:
+          path: .fftw
+          key: fftw-3.3.10-msys
+
+      - name: Build FFTW (float, static) if not cached
+        run: |
+          FFTW_PREFIX="$(cygpath -u "$GITHUB_WORKSPACE")/.fftw"
+          if [ ! -f "$FFTW_PREFIX/lib/libfftw3f.a" ]; then
+            cd /tmp
+            curl -LO https://www.fftw.org/fftw-3.3.10.tar.gz
+            tar -xzf fftw-3.3.10.tar.gz
+            cd fftw-3.3.10
+            ./configure --enable-float --disable-shared --enable-static \
+              --disable-fortran --disable-doc --prefix="$FFTW_PREFIX"
+            make -j"$(nproc)"
+            make install
+          else
+            echo "FFTW from cache"
+          fi
+
+      - name: Configure (CMake + Ninja, Release, CPU-only)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_OPENCL=OFF -DUSE_VULKAN=OFF -DFFTW_ROOT="$(cygpath -u "$GITHUB_WORKSPACE")/.fftw"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Smoke test (headless)
+        # --help prints usage and exits 0.
+        # set +e first: the msys2 shell aborts on a failing command
+        # before any exit-code check can run.
+        run: |
+          set +e
+          ./build/iridium-sniffer --help; code=$?
+          echo "help exit=$code"
+          if [ "$code" -ne 0 ]; then exit 1; fi
+
+      - name: Package
+        run: |
+          mkdir -p dist/data
+          cp build/iridium-sniffer.exe dist/
+          for dll in $(ldd build/iridium-sniffer.exe | grep -o '/usr/bin/msys-[^ ]*\.dll' | sort -u || true); do cp "$dll" dist/; done
+          cp data/waypoints.csv dist/data/
+          ls -lh dist/ dist/data/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iridium-sniffer-Windows-x64
+          path: dist/
+          if-no-files-found: error
