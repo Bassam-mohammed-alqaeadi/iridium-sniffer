@@ -60,8 +60,13 @@ jobs:
             echo "FFTW from cache"
           fi
 
-      - name: Configure (CMake + Ninja, Release, CPU-only)
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_OPENCL=OFF -DUSE_VULKAN=OFF -DFFTW_ROOT="$(cygpath -u "$GITHUB_WORKSPACE")/.fftw"
+      # Run #1: MSYS GCC 16.2 crashed (internal compiler error, GIMPLE
+      # forwprop pass) compiling qpsk_demod.c at -O3 (RelWithDebInfo).
+      # Workaround, no source change: custom build type "O2" (so none of
+      # CMakeLists' per-config -O3 flags apply) + -O2 with the crashing
+      # forward-propagation pass disabled.
+      - name: Configure (CMake + Ninja, CPU-only, -O2, no forwprop)
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=O2 -DCMAKE_C_FLAGS="-O2 -fno-forward-propagate" -DUSE_OPENCL=OFF -DUSE_VULKAN=OFF -DFFTW_ROOT="$(cygpath -u "$GITHUB_WORKSPACE")/.fftw"
 
       - name: Build
         run: cmake --build build --parallel
